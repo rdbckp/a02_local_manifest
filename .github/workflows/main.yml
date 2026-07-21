@@ -140,6 +140,27 @@ jobs:
             --optimized-fetch --prune
           df -h /mnt
 
+      - name: Unshallow vendor/lineage biar git describe --tags kebaca (fix nama file lineage-.zip kosong)
+        working-directory: /mnt/build
+        run: |
+          # repo init dipakai dengan --depth=1, jadi SEMUA project (termasuk
+          # vendor/lineage) ke-clone shallow tanpa histori tag. Build system
+          # LineageOS pakai `git describe --tags` di vendor/lineage buat
+          # generate string versi nama file zip. Kalau shallow & gak ada tag
+          # yang kejangkau, string versi jadi kosong -> lineage-.zip (cacat).
+          # Fix: unshallow + fetch tags KHUSUS vendor/lineage saja (repo ini
+          # kecil, gak akan bikin disk penuh kayak kalau semua project di-unshallow).
+          if [ -d "vendor/lineage" ]; then
+            cd vendor/lineage
+            git fetch --unshallow origin || git fetch --depth=1000 origin
+            git fetch --tags --force origin
+            echo "Hasil git describe di vendor/lineage:"
+            git describe --tags || echo "WARNING: masih belum nemu tag, cek manual"
+            cd /mnt/build
+          else
+            echo "WARNING: folder vendor/lineage gak ketemu, skip step ini"
+          fi
+
       - name: Flatten struktur vendor_a02 yang nested
         working-directory: /mnt/build
         run: |
