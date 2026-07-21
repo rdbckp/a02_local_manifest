@@ -20,9 +20,9 @@ on:
         required: true
         default: 'main'
       test_projects:
-        description: 'Path project yang mau di-sync buat tes (pisahin spasi). Default cuma vendor/lineage buat ngetes masalah versioning/tag.'
+        description: 'Path project yang mau di-sync buat tes (pisahin spasi). vendor/lineage + build/make buat trace mekanisme penamaan file zip.'
         required: true
-        default: 'vendor/lineage'
+        default: 'vendor/lineage build/make'
       test_depth1:
         description: 'Pakai --depth=1 di repo init? (samain kondisi kayak workflow utama biar bug kereproduksi)'
         required: true
@@ -151,3 +151,37 @@ jobs:
           echo "Kalau setelah unshallow describe masih gagal/kosong, berarti masalahnya"
           echo "bukan di shallow clone, tapi ada hal lain (misal branch lineage-19.1"
           echo "di repo vendor/lineage emang gak ada tag sama sekali)."
+
+      - name: Trace mekanisme penamaan file zip langsung dari source Makefile
+        working-directory: /mnt/build
+        run: |
+          echo "=================================================="
+          echo "Cari 'name := lineage-...' atau FILE_NAME_TAG di build/make"
+          echo "=================================================="
+          grep -rn "name := lineage" build/make/core/*.mk 2>/dev/null || echo "(gak ketemu pola 'name := lineage' di build/make/core)"
+          echo ""
+          grep -rln "FILE_NAME_TAG" build/make/core/*.mk vendor/lineage/config/*.mk 2>/dev/null || echo "(FILE_NAME_TAG gak ketemu di file manapun)"
+          echo ""
+          echo "--- isi lengkap tiap file yang mengandung FILE_NAME_TAG ---"
+          for f in $(grep -rl "FILE_NAME_TAG" build/make/core/*.mk vendor/lineage/config/*.mk 2>/dev/null); do
+            echo "===== $f ====="
+            cat "$f"
+            echo ""
+          done
+
+          echo "=================================================="
+          echo "Cari juga LINEAGE_VERSION / LINEAGE_BUILDTYPE / PRODUCT_VERSION_MAJOR"
+          echo "=================================================="
+          grep -rn "LINEAGE_VERSION\s*:=\|LINEAGE_BUILDTYPE\s*:=\|PRODUCT_VERSION_MAJOR\s*:=\|PRODUCT_VERSION_MINOR\s*:=" \
+            vendor/lineage/config/*.mk 2>/dev/null || echo "(gak ketemu definisi versi di vendor/lineage/config)"
+
+          echo "=================================================="
+          echo "Isi vendor/lineage/config/version.mk (kalau ada)"
+          echo "=================================================="
+          if [ -f "vendor/lineage/config/version.mk" ]; then
+            cat vendor/lineage/config/version.mk
+          else
+            echo "!! File vendor/lineage/config/version.mk TIDAK ADA"
+            echo "isi folder vendor/lineage/config:"
+            ls -la vendor/lineage/config/ 2>/dev/null || echo "folder config gak ketemu"
+          fi
