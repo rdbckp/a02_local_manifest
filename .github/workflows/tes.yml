@@ -1,0 +1,153 @@
+name: DEBUG - Test repo init/sync A02 (cepat, bukan full build)
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_manifest_url:
+        description: 'URL manifest ROM'
+        required: true
+        default: 'https://github.com/LineageOS/android.git'
+      rom_branch:
+        description: 'Branch manifest ROM'
+        required: true
+        default: 'lineage-19.1'
+      local_manifest_repo:
+        description: 'Repo local_manifest'
+        required: true
+        default: 'https://github.com/rdbckp/a02_local_manifest.git'
+      local_manifest_branch:
+        description: 'Branch local_manifest'
+        required: true
+        default: 'main'
+      test_projects:
+        description: 'Path project yang mau di-sync buat tes (pisahin spasi). Default cuma vendor/lineage buat ngetes masalah versioning/tag.'
+        required: true
+        default: 'vendor/lineage'
+      test_depth1:
+        description: 'Pakai --depth=1 di repo init? (samain kondisi kayak workflow utama biar bug kereproduksi)'
+        required: true
+        default: 'true'
+        type: boolean
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Setup build directory
+        run: |
+          sudo mkdir -p /mnt/build
+          sudo chown -R "$USER:$USER" /mnt/build
+          echo "BUILD_DIR=/mnt/build" >> "$GITHUB_ENV"
+          df -h /mnt
+
+      - name: Install repo tool
+        run: |
+          mkdir -p "$BUILD_DIR/bin"
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$BUILD_DIR/bin/repo"
+          chmod a+x "$BUILD_DIR/bin/repo"
+          echo "$BUILD_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Setup git identity
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git config --global color.ui false
+
+      - name: repo init
+        working-directory: /mnt/build
+        run: |
+          if [ "${{ github.event.inputs.test_depth1 }}" = "true" ]; then
+            echo ">>> repo init DENGAN --depth=1 (kondisi sama kayak workflow utama)"
+            repo init -u "${{ github.event.inputs.rom_manifest_url }}" \
+                       -b "${{ github.event.inputs.rom_branch }}" \
+                       --depth=1 --git-lfs
+          else
+            echo ">>> repo init TANPA --depth=1"
+            repo init -u "${{ github.event.inputs.rom_manifest_url }}" \
+                       -b "${{ github.event.inputs.rom_branch }}" \
+                       --git-lfs
+          fi
+
+      - name: Tambahin local_manifest
+        working-directory: /mnt/build
+        run: |
+          mkdir -p .repo/local_manifests
+          git clone --depth=1 \
+            -b "${{ github.event.inputs.local_manifest_branch }}" \
+            "${{ github.event.inputs.local_manifest_repo }}" \
+            /tmp/local_manifests
+          cp /tmp/local_manifests/*.xml .repo/local_manifests/
+          echo "=== Isi local_manifest.xml ==="
+          cat .repo/local_manifests/*.xml
+
+      - name: repo sync CUMA project yang mau dites
+        working-directory: /mnt/build
+        run: |
+          echo ">>> Mau sync project: ${{ github.event.inputs.test_projects }}"
+          time repo sync -c -j$(nproc --all) \
+            --force-sync --no-clone-bundle \
+            --optimized-fetch \
+            ${{ github.event.inputs.test_projects }}
+          df -h /mnt
+
+      - name: Diagnostik tiap project yang disync
+        working-directory: /mnt/build
+        run: |
+          for proj in ${{ github.event.inputs.test_projects }}; do
+            echo "=================================================="
+            echo "PROJECT: $proj"
+            echo "=================================================="
+            if [ ! -d "$proj" ]; then
+              echo "!! Folder $proj TIDAK ADA setelah sync"
+              continue
+            fi
+            cd "$proj"
+
+            echo "--- git remote -v ---"
+            git remote -v
+
+            echo "--- apakah shallow? ---"
+            if [ -f ".git/shallow" ]; then
+              echo "YA, ini shallow clone (ada .git/shallow)"
+            else
+              echo "TIDAK shallow, histori lengkap"
+            fi
+
+            echo "--- git log -1 (commit terakhir) ---"
+            git log -1 --oneline
+
+            echo "--- git tag (list, max 10) ---"
+            git tag | head -10
+            echo "jumlah tag: $(git tag | wc -l)"
+
+            echo "--- git describe --tags ---"
+            git describe --tags 2>&1 || echo "GAGAL: git describe --tags error/kosong"
+
+            echo "--- coba fetch --unshallow (buat lihat ini bakal fix atau nggak) ---"
+            REMOTE_NAME=$(git remote | head -n1)
+            echo "remote kedetek: '$REMOTE_NAME'"
+            if [ -n "$REMOTE_NAME" ]; then
+              git fetch --unshallow "$REMOTE_NAME" 2>&1 || git fetch --depth=1000 "$REMOTE_NAME" 2>&1
+              git fetch --tags --force "$REMOTE_NAME" 2>&1
+              echo "--- git describe --tags SETELAH unshallow+fetch tags ---"
+              git describe --tags 2>&1 || echo "MASIH GAGAL setelah unshallow"
+              echo "jumlah tag setelah fetch: $(git tag | wc -l)"
+            else
+              echo "!! Gak ada remote kedetek, gak bisa coba unshallow"
+            fi
+
+            cd /mnt/build
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "Debug selesai. Scroll ke atas, cek section 'Diagnostik tiap project'."
+          echo "Yang paling penting dilihat:"
+          echo "1. Apakah project shallow (.git/shallow ada)?"
+          echo "2. Berapa jumlah tag SEBELUM vs SESUDAH unshallow?"
+          echo "3. Apakah 'git describe --tags' berhasil dapet string SETELAH unshallow?"
+          echo "Kalau setelah unshallow describe masih gagal/kosong, berarti masalahnya"
+          echo "bukan di shallow clone, tapi ada hal lain (misal branch lineage-19.1"
+          echo "di repo vendor/lineage emang gak ada tag sama sekali)."
