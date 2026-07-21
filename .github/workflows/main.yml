@@ -1,0 +1,176 @@
+name: Build ROM - Galaxy A02 (SM-A022F/M)
+
+on:
+  workflow_dispatch:
+    inputs:
+      rom_manifest_url:
+        description: 'URL manifest ROM (misal LineageOS/crDroid sync repo)'
+        required: true
+        default: 'https://github.com/LineageOS/android.git'
+      rom_branch:
+        description: 'Branch manifest ROM'
+        required: true
+        default: 'lineage-19.1'
+      local_manifest_repo:
+        description: 'Repo local_manifest (device tree + kernel + vendor A02 lo)'
+        required: true
+        default: 'https://github.com/rdbckp/a02_local_manifests.git'
+      local_manifest_branch:
+        description: 'Branch local_manifest'
+        required: true
+        default: 'a02'
+      device_codename:
+        description: 'Codename device (contoh: a02q)'
+        required: true
+        default: 'a02'
+      build_target:
+        description: 'Target lunch (userdebug/eng)'
+        required: true
+        default: 'userdebug'
+      build_command:
+        description: 'Command build (mka bacon / m bacon / mka target)'
+        required: true
+        default: 'mka bacon'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # mepet limit 6 jam GH Actions
+    steps:
+      # =========================================================
+      # STAGE 1 - Bersihin disk root + siapin /mnt sebagai build space
+      # =========================================================
+      - name: Free up root disk space
+        run: |
+          echo "=== Sebelum cleanup ==="
+          df -h
+
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker image prune --all --force || true
+
+          echo "=== Sesudah cleanup ==="
+          df -h
+
+      - name: Setup build directory di /mnt (disk gede)
+        run: |
+          sudo mkdir -p /mnt/build
+          sudo chown -R "$USER:$USER" /mnt/build
+          echo "BUILD_DIR=/mnt/build" >> "$GITHUB_ENV"
+          df -h /mnt
+
+      # =========================================================
+      # STAGE 2 - Install dependency build Android/AOSP
+      # =========================================================
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache curl flex \
+            g++-multilib gcc-multilib git git-lfs gnupg \
+            gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev liblz4-tool libncurses5 libncurses5-dev \
+            libsdl1.2-dev libssl-dev libxml2 libxml2-utils \
+            lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev python3 python-is-python3 \
+            openjdk-11-jdk unzip
+
+      - name: Install repo tool
+        run: |
+          mkdir -p "$BUILD_DIR/bin"
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo > "$BUILD_DIR/bin/repo"
+          chmod a+x "$BUILD_DIR/bin/repo"
+          echo "$BUILD_DIR/bin" >> "$GITHUB_PATH"
+
+      - name: Setup git identity
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git config --global color.ui false
+
+      # =========================================================
+      # STAGE 3 - ccache (biar build lanjutan gak dari nol)
+      # =========================================================
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: /mnt/build/.ccache
+          key: ccache-a02-${{ github.run_id }}
+          restore-keys: |
+            ccache-a02-
+
+      - name: Configure ccache
+        run: |
+          export USE_CCACHE=1
+          export CCACHE_DIR=/mnt/build/.ccache
+          echo "USE_CCACHE=1" >> "$GITHUB_ENV"
+          echo "CCACHE_DIR=/mnt/build/.ccache" >> "$GITHUB_ENV"
+          ccache -M 30G || true
+
+      # =========================================================
+      # STAGE 4 - repo init & sync (source minimal via local_manifest)
+      # =========================================================
+      - name: repo init
+        working-directory: /mnt/build
+        run: |
+          repo init -u "${{ github.event.inputs.rom_manifest_url }}" \
+                     -b "${{ github.event.inputs.rom_branch }}" \
+                     --depth=1 --git-lfs
+
+      - name: Tambahin local_manifest (device tree, kernel, vendor A02)
+        working-directory: /mnt/build
+        run: |
+          mkdir -p .repo/local_manifests
+          git clone --depth=1 \
+            -b "${{ github.event.inputs.local_manifest_branch }}" \
+            "${{ github.event.inputs.local_manifest_repo }}" \
+            /tmp/local_manifests
+          cp /tmp/local_manifests/*.xml .repo/local_manifests/
+
+      - name: repo sync
+        working-directory: /mnt/build
+        run: |
+          repo sync -c -j$(nproc --all) \
+            --force-sync --no-clone-bundle --no-tags \
+            --optimized-fetch --prune
+          df -h /mnt
+
+      # =========================================================
+      # STAGE 5 - Build
+      # =========================================================
+      - name: Build ROM
+        working-directory: /mnt/build
+        run: |
+          export USE_CCACHE=1
+          export CCACHE_DIR=/mnt/build/.ccache
+          source build/envsetup.sh
+          lunch "lineage_${{ github.event.inputs.device_codename }}-${{ github.event.inputs.build_target }}"
+          ${{ github.event.inputs.build_command }}
+
+      - name: Cari hasil build
+        working-directory: /mnt/build
+        run: |
+          find out/target/product/${{ github.event.inputs.device_codename }} \
+            -maxdepth 1 -name "*.zip" -exec cp {} "$GITHUB_WORKSPACE/" \;
+          ls -la "$GITHUB_WORKSPACE"/*.zip
+
+      # =========================================================
+      # STAGE 6 - Upload sebagai release (biar gak numpuk di Artifacts)
+      # =========================================================
+      - name: Upload ke GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "ROM A02 Build #${{ github.run_number }}"
+          files: ${{ github.workspace }}/*.zip
+          body: |
+            Auto-build ROM untuk ${{ github.event.inputs.device_codename }}
+            Branch manifest: ${{ github.event.inputs.rom_branch }}
+            Commit local_manifest: ${{ github.event.inputs.local_manifest_branch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
