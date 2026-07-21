@@ -136,7 +136,7 @@ jobs:
         working-directory: /mnt/build
         run: |
           repo sync -c -j$(nproc --all) \
-            --force-sync --no-clone-bundle --no-tags \
+            --force-sync --no-clone-bundle \
             --optimized-fetch --prune
           df -h /mnt
 
