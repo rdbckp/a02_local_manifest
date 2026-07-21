@@ -152,8 +152,16 @@ jobs:
           # kecil, gak akan bikin disk penuh kayak kalau semua project di-unshallow).
           if [ -d "vendor/lineage" ]; then
             cd vendor/lineage
-            git fetch --unshallow origin || git fetch --depth=1000 origin
-            git fetch --tags --force origin
+            # nama remote di repo-managed project BELUM TENTU "origin",
+            # biasanya ngikutin nama remote di manifest. Deteksi dulu.
+            REMOTE_NAME=$(git remote | head -n1)
+            echo "Remote yang kedetek: $REMOTE_NAME"
+            if [ -z "$REMOTE_NAME" ]; then
+              echo "WARNING: gak ada remote kedetek di vendor/lineage, skip unshallow"
+            else
+              git fetch --unshallow "$REMOTE_NAME" || git fetch --depth=1000 "$REMOTE_NAME"
+              git fetch --tags --force "$REMOTE_NAME"
+            fi
             echo "Hasil git describe di vendor/lineage:"
             git describe --tags || echo "WARNING: masih belum nemu tag, cek manual"
             cd /mnt/build
