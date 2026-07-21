@@ -14,11 +14,11 @@ on:
       local_manifest_repo:
         description: 'Repo local_manifest (device tree + kernel + vendor A02 lo)'
         required: true
-        default: 'https://github.com/rdbckp/a02_local_manifests.git'
+        default: 'https://github.com/rdbckp/a02_local_manifest.git'
       local_manifest_branch:
         description: 'Branch local_manifest'
         required: true
-        default: 'a02'
+        default: 'main'
       device_codename:
         description: 'Codename device (contoh: a02q)'
         required: true
