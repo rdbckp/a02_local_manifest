@@ -140,6 +140,17 @@ jobs:
             --optimized-fetch --prune
           df -h /mnt
 
+      - name: Flatten struktur vendor_a02 yang nested
+        working-directory: /mnt/build
+        run: |
+          # repo vendor_a02 punya subfolder bersarang (vendor_a02/samsung/a02),
+          # pindahin isinya ke posisi yang diharapkan device.mk
+          if [ -d "vendor/samsung/a02/vendor_a02/samsung/a02" ]; then
+            cp -r vendor/samsung/a02/vendor_a02/samsung/a02/. vendor/samsung/a02/
+            rm -rf vendor/samsung/a02/vendor_a02 vendor/samsung/a02/vendor_a32
+          fi
+          ls -la vendor/samsung/a02/
+
       # =========================================================
       # STAGE 5 - Build
       # =========================================================
