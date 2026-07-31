@@ -30,7 +30,7 @@ on:
       build_command:
         description: 'Command build (mka bacon / m bacon / mka target)'
         required: true
-        default: 'mka bacon'
+        default: 'mka droid dist bacon'
 
 jobs:
   build:
