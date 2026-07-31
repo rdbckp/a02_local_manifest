@@ -192,6 +192,25 @@ jobs:
           lunch "lineage_${{ github.event.inputs.device_codename }}-${{ github.event.inputs.build_target }}"
           ${{ github.event.inputs.build_command }}
 
+      - name: DEBUG - Cek isi out/target/product/a02 (jalan walau build gagal)
+        if: always()
+        working-directory: /mnt/build
+        run: |
+          echo "=== Isi out/target/product/a02 (semua file) ==="
+          find out/target/product/a02 -maxdepth 2 -exec ls -la {} \; 2>&1 || echo "folder gak ada / kosong"
+          echo ""
+          echo "=== Cari file .img ==="
+          find out/target/product/a02 -name "*.img" 2>&1
+          echo ""
+          echo "=== Cari folder target-files / staging (system/vendor mentah) ==="
+          find out/target/product/a02 -maxdepth 1 -type d 2>&1
+          echo ""
+          echo "=== isi .ninja_log (10 baris terakhir, buat liat step apa aja yg beneran dieksekusi) ==="
+          tail -20 .ninja_log 2>&1 || echo "gak ada .ninja_log"
+          echo ""
+          echo "=== jumlah total baris .ninja_log (makin dikit makin sedikit yang di-build) ==="
+          wc -l .ninja_log 2>&1
+
       - name: Cari hasil build
         working-directory: /mnt/build
         run: |
