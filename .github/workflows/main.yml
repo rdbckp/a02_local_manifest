@@ -30,7 +30,7 @@ on:
       build_command:
         description: 'Command build (mka bacon / m bacon / mka target)'
         required: true
-        default: 'mka droid dist bacon'
+        default: 'mka bacon -j$(nproc --all)'
 
 jobs:
   build:
@@ -181,13 +181,44 @@ jobs:
           ls -la vendor/samsung/a02/
 
       # =========================================================
-      # STAGE 5 - Build
+      # STAGE 5 - Preflight + Build
       # =========================================================
+      - name: Preflight check device tree, vendor, kernel
+        working-directory: /mnt/build
+        run: |
+          set -e
+          echo "=== Verifikasi source tree ==="
+          for p in \
+            "device/samsung/a02/AndroidProducts.mk" \
+            "device/samsung/a02/BoardConfig.mk" \
+            "device/samsung/a02/device.mk" \
+            "device/samsung/a02/lineage_a02.mk" \
+            "device/samsung/a02/system.prop" \
+            "device/samsung/a02/rootdir/etc/fstab.mt6739" \
+            "vendor/samsung/a02/a02-vendor.mk" \
+            "vendor/samsung/a02/BoardConfigVendor.mk" \
+            "vendor/samsung/a02/vendor.prop" \
+            "vendor/samsung/a02/configs/board.mk" \
+            "kernel/samsung/a02/Makefile"; do
+            if [ ! -e "$p" ]; then
+              echo "MISSING: $p"
+              exit 1
+            fi
+          done
+          echo "Semua file penting ada."
+          echo "=== isi tree device ==="
+          find device/samsung/a02 -maxdepth 2 -type f | sort | sed -n '1,80p'
+          echo "=== isi tree vendor ==="
+          find vendor/samsung/a02 -maxdepth 3 -type f | sort | sed -n '1,80p'
+
       - name: Build ROM
         working-directory: /mnt/build
         run: |
+          set -e
           export USE_CCACHE=1
           export CCACHE_DIR=/mnt/build/.ccache
+          export LC_ALL=C.UTF-8
+          export LANG=C.UTF-8
           source build/envsetup.sh
           lunch "lineage_${{ github.event.inputs.device_codename }}-${{ github.event.inputs.build_target }}"
           ${{ github.event.inputs.build_command }}
@@ -214,6 +245,13 @@ jobs:
       - name: Cari hasil build
         working-directory: /mnt/build
         run: |
+          set -e
+          ZIP_COUNT=$(find out/target/product/${{ github.event.inputs.device_codename }} \
+            -maxdepth 1 -name "*.zip" | wc -l)
+          if [ "$ZIP_COUNT" -eq 0 ]; then
+            echo "Tidak ada file zip hasil build yang ditemukan."
+            exit 0
+          fi
           find out/target/product/${{ github.event.inputs.device_codename }} \
             -maxdepth 1 -name "*.zip" -exec cp {} "$GITHUB_WORKSPACE/" \;
           ls -la "$GITHUB_WORKSPACE"/*.zip
@@ -231,5 +269,6 @@ jobs:
             Auto-build ROM untuk ${{ github.event.inputs.device_codename }}
             Branch manifest: ${{ github.event.inputs.rom_branch }}
             Commit local_manifest: ${{ github.event.inputs.local_manifest_branch }}
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
