@@ -17,9 +17,9 @@
            clone-depth="1" />
 
   <!-- Kernel tree for the MT6739-based A02 device -->
-  <project name="a022f_kernel"
+  <project name="a02_local_manifest"
            path="kernel/samsung/a02"
            remote="rdbckp"
-           revision="186-master"
+           revision="main"
            clone-depth="1" />
 </manifest>
