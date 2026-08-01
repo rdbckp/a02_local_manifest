@@ -10,7 +10,7 @@ on:
       rom_branch:
         description: 'Branch manifest ROM'
         required: true
-        default: 'lineage-19.1'
+        default: 'lineage-18.1'
       local_manifest_repo:
         description: 'Repo local_manifest (device tree + kernel + vendor A02 lo)'
         required: true
