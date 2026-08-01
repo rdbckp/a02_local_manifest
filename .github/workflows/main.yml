@@ -169,16 +169,63 @@ jobs:
             echo "WARNING: folder vendor/lineage gak ketemu, skip step ini"
           fi
 
-      - name: Flatten struktur vendor_a02 yang nested
+      - name: Flatten struktur device/vendor A02 yang nested
         working-directory: /mnt/build
         run: |
-          # repo vendor_a02 punya subfolder bersarang (vendor_a02/samsung/a02),
-          # pindahin isinya ke posisi yang diharapkan device.mk
-          if [ -d "vendor/samsung/a02/vendor_a02/samsung/a02" ]; then
-            cp -r vendor/samsung/a02/vendor_a02/samsung/a02/. vendor/samsung/a02/
-            rm -rf vendor/samsung/a02/vendor_a02 vendor/samsung/a02/vendor_a32
-          fi
-          ls -la vendor/samsung/a02/
+          set -e
+          # Repo pribadi (device_samsung_a02, vendor_a02) kadang ke-clone dengan
+          # subfolder bersarang sesuai nama repo, misal:
+          #   vendor/samsung/a02/vendor_a02/samsung/a02/...
+          # Sebelumnya cuma vendor yang di-flatten (hardcoded ke nama
+          # "vendor_a02"), makanya device tree (device_samsung_a02) yang punya
+          # pola sama gak ke-flatten -> system.prop dkk "MISSING" pas preflight.
+          #
+          # Fix generic: buat tiap base folder, cek file penanda di root.
+          # Kalau gak ada tapi ketemu lebih dalam, copy isi folder yang
+          # mengandung penanda itu ke root base, apapun nama subfoldernya.
+
+          flatten_if_nested() {
+            base="$1"      # contoh: device/samsung/a02
+            marker="$2"    # file penanda, contoh: device.mk
+
+            if [ ! -d "$base" ]; then
+              echo "WARNING: folder $base gak ketemu, skip"
+              return
+            fi
+
+            if [ -e "$base/$marker" ]; then
+              echo "OK: $base sudah flat (ada $marker di root)"
+              return
+            fi
+
+            found=$(find "$base" -mindepth 2 -name "$marker" -print -quit 2>/dev/null || true)
+
+            if [ -z "$found" ]; then
+              echo "WARNING: $marker gak ketemu sama sekali di bawah $base"
+              return
+            fi
+
+            nested_dir=$(dirname "$found")
+            echo "Nested kedetek di $base: $nested_dir -> flatten ke $base"
+            cp -r "$nested_dir"/. "$base"/
+
+            # bersihin folder nested-nya biar gak numpuk/ganggu (nama folder
+            # pertama di bawah base, apapun namanya)
+            top_nested=$(find "$base" -mindepth 1 -maxdepth 1 -type d ! -name "$(basename "$(dirname "$found")")" -print 2>/dev/null || true)
+            for d in $(find "$base" -mindepth 1 -maxdepth 1 -type d); do
+              case "$d" in
+                *"$(echo "$nested_dir" | cut -d/ -f1-3)"*) rm -rf "$d" ;;
+              esac
+            done
+          }
+
+          flatten_if_nested "device/samsung/a02" "device.mk"
+          flatten_if_nested "vendor/samsung/a02" "a02-vendor.mk"
+
+          echo "=== isi device/samsung/a02 ==="
+          ls -la device/samsung/a02/ 2>&1 || true
+          echo "=== isi vendor/samsung/a02 ==="
+          ls -la vendor/samsung/a02/ 2>&1 || true
 
       # =========================================================
       # STAGE 5 - Preflight + Build
@@ -272,3 +319,4 @@ jobs:
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
