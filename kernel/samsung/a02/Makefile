@@ -1,5 +1,7 @@
-# Placeholder Makefile for kernel tree integration
-# The actual kernel sources should be synced from the referenced repository.
+# Minimal placeholder for the kernel tree integration.
+# This file exists so the Android build system can treat the tree as present.
+
+.PHONY: all clean
 
 all:
 	@echo "Kernel tree placeholder for a02"
